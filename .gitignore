@@ -1,0 +1,23 @@
+# macOS
+.DS_Store
+
+# SwiftPM
+.build/
+.swiftpm/
+
+# Xcode
+DerivedData/
+*.xcodeproj
+*.xcworkspace
+*.xcuserstate
+*.xccheckout
+*.xcscmblueprint
+
+# Editors
+.vscode/
+.idea/
+*.swp
+*~
+
+# DocC
+*.doccarchive
