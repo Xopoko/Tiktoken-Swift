@@ -86,7 +86,7 @@ The benchmark reports tokens/sec and bytes/sec for each encoding.
 
 ### Benchmark Plot
 
-![Tiktoken-Swift benchmark plot](benchmark.svg)
+![Tiktoken-Swift benchmark plot](resources/benchmark.svg)
 
 Note: results depend on hardware, OS, and build configuration. Re-run `swift run TiktokenBenchmark` on your machine to regenerate numbers.
 
