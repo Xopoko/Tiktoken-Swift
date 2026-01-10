@@ -2,7 +2,7 @@
 
 # Tiktoken-Swift
 
-Native Swift 6.2 implementation of OpenAI’s tiktoken tokenizer. This package mirrors the behavior of the reference tiktoken (Python/Rust) implementation while staying fully Swift/SwiftPM friendly.
+Native Swift 6.2 implementation of [OpenAI’s tiktoken tokenizer](https://github.com/openai/tiktoken). This package mirrors the behavior of the reference tiktoken (Python/Rust) implementation while staying fully Swift/SwiftPM friendly.
 
 ## Highlights
 
