@@ -18,7 +18,7 @@ Native Swift 6.2 implementation of [OpenAI’s tiktoken tokenizer](https://githu
 Add the package in Xcode or `Package.swift`:
 
 ```swift
-.package(url: "https://github.com/your-org/Tiktoken-Swift.git", from: "0.1.0")
+.package(url: "https://github.com/Xopoko/Tiktoken-Swift.git", from: "0.1.0")
 ```
 
 Then add `Tiktoken` as a dependency of your target.
