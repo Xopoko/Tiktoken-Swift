@@ -50,11 +50,13 @@ public struct Encoding: CustomStringConvertible, @unchecked Sendable {
 
     private let coreBPE: CoreBPE
     private let patStr: String
+    private let specialTokenValuesSet: Set<Int>
 
     init(definition: EncodingDefinition) throws {
         self.name = definition.name
         self.specialTokens = definition.specialTokens
         self.specialTokensSet = Set(definition.specialTokens.keys)
+        self.specialTokenValuesSet = Set(definition.specialTokens.values)
         self.patStr = definition.patStr
 
         let mergeableMax = definition.mergeableRanks.values.max() ?? 0
@@ -166,6 +168,123 @@ public struct Encoding: CustomStringConvertible, @unchecked Sendable {
         return try coreBPE.decodeSingleTokenBytes(token)
     }
 
+    public func decodeTokensBytes(_ tokens: [Int]) throws -> [Data] {
+        return try coreBPE.decodeTokensBytes(tokens)
+    }
+
+    public func decodeWithOffsets(_ tokens: [Int]) throws -> (text: String, offsets: [Int]) {
+        let tokenBytes = try decodeTokensBytes(tokens)
+        var textLength = 0
+        var offsets: [Int] = []
+        offsets.reserveCapacity(tokenBytes.count)
+
+        for token in tokenBytes {
+            let bytes = [UInt8](token)
+            if let first = bytes.first, Self.isUTF8ContinuationByte(first) {
+                offsets.append(max(0, textLength - 1))
+            } else {
+                offsets.append(textLength)
+            }
+            textLength += bytes.reduce(0) { count, byte in
+                count + (Self.isUTF8ContinuationByte(byte) ? 0 : 1)
+            }
+        }
+
+        let data = tokenBytes.reduce(into: Data()) { result, token in
+            result.append(token)
+        }
+        guard let text = String(data: data, encoding: .utf8) else {
+            throw TiktokenError.decodeFailure("Invalid UTF-8 sequence")
+        }
+        return (text, offsets)
+    }
+
+    public func decodeBatch(
+        _ batch: [[Int]],
+        errors: DecodeErrorMode = .replace,
+        numThreads: Int = 8
+    ) throws -> [String] {
+        if batch.isEmpty { return [] }
+        let resultsBox = LockedBox(Array(repeating: "", count: batch.count))
+        let queue = DispatchQueue(label: "tiktoken.decode.batch", attributes: .concurrent)
+        let group = DispatchGroup()
+        let chunkSize = max(1, batch.count / max(1, numThreads))
+        let errorBox = LockedBox<Error?>(nil)
+
+        for chunkStart in stride(from: 0, to: batch.count, by: chunkSize) {
+            group.enter()
+            queue.async {
+                let chunkEnd = min(chunkStart + chunkSize, batch.count)
+                for idx in chunkStart..<chunkEnd {
+                    do {
+                        let decoded = try self.decode(batch[idx], errors: errors)
+                        resultsBox.withValue { results in
+                            results[idx] = decoded
+                        }
+                    } catch {
+                        errorBox.withValue { stored in
+                            if stored == nil {
+                                stored = error
+                            }
+                        }
+                    }
+                }
+                group.leave()
+            }
+        }
+
+        group.wait()
+        if let error = errorBox.withValue({ $0 }) {
+            throw error
+        }
+        return resultsBox.withValue { $0 }
+    }
+
+    public func decodeBytesBatch(_ batch: [[Int]], numThreads: Int = 8) throws -> [Data] {
+        if batch.isEmpty { return [] }
+        let resultsBox = LockedBox(Array(repeating: Data(), count: batch.count))
+        let queue = DispatchQueue(label: "tiktoken.decode.bytes.batch", attributes: .concurrent)
+        let group = DispatchGroup()
+        let chunkSize = max(1, batch.count / max(1, numThreads))
+        let errorBox = LockedBox<Error?>(nil)
+
+        for chunkStart in stride(from: 0, to: batch.count, by: chunkSize) {
+            group.enter()
+            queue.async {
+                let chunkEnd = min(chunkStart + chunkSize, batch.count)
+                for idx in chunkStart..<chunkEnd {
+                    do {
+                        let decoded = try self.decodeBytes(batch[idx])
+                        resultsBox.withValue { results in
+                            results[idx] = decoded
+                        }
+                    } catch {
+                        errorBox.withValue { stored in
+                            if stored == nil {
+                                stored = error
+                            }
+                        }
+                    }
+                }
+                group.leave()
+            }
+        }
+
+        group.wait()
+        if let error = errorBox.withValue({ $0 }) {
+            throw error
+        }
+        return resultsBox.withValue { $0 }
+    }
+
+    public func tokenByteValues() -> [Data] {
+        return coreBPE.tokenByteValues()
+    }
+
+    public func isSpecialToken(_ token: Int) -> Bool {
+        return specialTokenValuesSet.contains(token)
+    }
+
     public func encodeBatch(
         _ texts: [String],
         numThreads: Int = 8,
@@ -270,6 +389,10 @@ public struct Encoding: CustomStringConvertible, @unchecked Sendable {
             let token = nsText.substring(with: match.range)
             throw TiktokenError.disallowedSpecialToken(token)
         }
+    }
+
+    private static func isUTF8ContinuationByte(_ byte: UInt8) -> Bool {
+        return (byte & 0xC0) == 0x80
     }
 }
 

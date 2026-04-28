@@ -4,12 +4,16 @@
 
 Native Swift 6.2 implementation of [OpenAI’s tiktoken tokenizer](https://github.com/openai/tiktoken). This package mirrors the behavior of the reference tiktoken (Python/Rust) implementation while staying fully Swift/SwiftPM friendly.
 
+Reference target: `openai/tiktoken` `0.12.0`, plus the upstream GitHub `main` large-input BPE fix for long merge pieces.
+
 ## Highlights
 
 - Swift 6.2, no Rust/Python dependencies.
 - Supports GPT-2, r50k, p50k, cl100k, o200k encodings.
 - Special token safeguards (allowed/disallowed).
 - Batch encoding with parallelism.
+- Batch decoding and byte decoding helpers.
+- Token byte inspection and decode offsets.
 - Deterministic encoding/decoding with round‑trip tests.
 - Benchmark target with throughput metrics.
 
@@ -47,10 +51,28 @@ let enc = try Tiktoken.getEncoding("cl100k_base")
 let batch = try enc.encodeBatch(["hello", "world"])
 ```
 
+### Batch Decoding & Token Inspection
+
+```swift
+let enc = try Tiktoken.getEncoding("cl100k_base")
+let tokens = try enc.encode("hello world")
+let bytesByToken = try enc.decodeTokensBytes(tokens)
+let decoded = try enc.decodeBatch([tokens])
+let byteValues = enc.tokenByteValues()
+let eotIsSpecial = enc.isSpecialToken(enc.eotToken!)
+let offsets = try enc.decodeWithOffsets(tokens)
+```
+
 ### Model Mapping
 
 ```swift
 let enc = try Tiktoken.encoding(forModel: "gpt-5.2")
+```
+
+### Upstream Reference
+
+```swift
+Tiktoken.referenceVersion // "0.12.0"
 ```
 
 ## Encodings
@@ -94,6 +116,7 @@ Note: results depend on hardware, OS, and build configuration. Re-run `swift run
 
 ```bash
 swift test
+swift test -c release
 ```
 
 ## License

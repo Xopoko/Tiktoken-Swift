@@ -58,11 +58,19 @@ final class CoreBPE: @unchecked Sendable {
     }
 
     private func encodeOrdinaryInternal(_ text: String, metrics: UnsafeMutablePointer<EncodingMetrics>?) -> [Rank] {
+        return encodeOrdinaryWithLastPieceTokenLen(text, metrics: metrics).tokens
+    }
+
+    private func encodeOrdinaryWithLastPieceTokenLen(
+        _ text: String,
+        metrics: UnsafeMutablePointer<EncodingMetrics>?
+    ) -> (tokens: [Rank], lastPieceTokenLen: Int) {
         let nsText = text as NSString
         let fullRange = NSRange(location: 0, length: nsText.length)
         let matches = regex.matches(in: text, range: fullRange)
 
         var tokens: [Rank] = []
+        var lastPieceTokenLen = 0
         for match in matches {
             if match.range.length == 0 { continue }
             let piece = nsText.substring(with: match.range)
@@ -72,15 +80,17 @@ final class CoreBPE: @unchecked Sendable {
 
             if let token = encoder[pieceBytes] {
                 tokens.append(token)
+                lastPieceTokenLen = 1
                 metrics?.pointee.directTokenHits += 1
             } else {
                 let encoded = BytePairEncoder.encode(piece: pieceBytes, ranks: encoder)
                 tokens.append(contentsOf: encoded)
+                lastPieceTokenLen = encoded.count
                 metrics?.pointee.bpeMerges += encoded.count
             }
         }
         metrics?.pointee.tokensProduced += tokens.count
-        return tokens
+        return (tokens, lastPieceTokenLen)
     }
 
     func encode(_ text: String, allowedSpecial: Set<String>) throws -> (tokens: [Rank], lastPieceTokenLen: Int) {
@@ -93,7 +103,7 @@ final class CoreBPE: @unchecked Sendable {
 
     private func encodeInternal(_ text: String, allowedSpecial: Set<String>, metrics: UnsafeMutablePointer<EncodingMetrics>?) throws -> (tokens: [Rank], lastPieceTokenLen: Int) {
         if allowedSpecial.isEmpty {
-            return (encodeOrdinaryInternal(text, metrics: metrics), 0)
+            return encodeOrdinaryWithLastPieceTokenLen(text, metrics: metrics)
         }
 
         let nsText = text as NSString
@@ -194,13 +204,26 @@ final class CoreBPE: @unchecked Sendable {
         throw TiktokenError.invalidToken(token)
     }
 
+    func decodeTokensBytes(_ tokens: [Rank]) throws -> [Data] {
+        try tokens.map { try decodeSingleTokenBytes($0) }
+    }
+
+    func tokenByteValues() -> [Data] {
+        sortedTokenBytes
+    }
+
+    func isSpecialToken(_ token: Rank) -> Bool {
+        specialTokensDecoder[token] != nil
+    }
+
     func encodeBytes(_ bytes: Data) throws -> [Rank] {
-        if let text = String(data: bytes, encoding: .utf8) {
+        let rawBytes = [UInt8](bytes)
+        let validUpTo = Utf8Validator.validPrefixLength(rawBytes)
+        if validUpTo == rawBytes.count {
+            let text = String(decoding: rawBytes, as: UTF8.self)
             return encodeOrdinary(text)
         }
 
-        let rawBytes = [UInt8](bytes)
-        let validUpTo = Utf8Validator.validPrefixLength(rawBytes)
         let prefixBytes = Array(rawBytes[0..<validUpTo])
         let suffixBytes = Array(rawBytes[validUpTo..<rawBytes.count])
 
