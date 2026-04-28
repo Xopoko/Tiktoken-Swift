@@ -44,6 +44,8 @@ final class EncodingRegistry: @unchecked Sendable {
 }
 
 public enum Tiktoken {
+    public static let referenceVersion = "0.12.0"
+
     public static func getEncoding(_ name: String) throws -> Encoding {
         return try EncodingRegistry.shared.getEncoding(name)
     }
